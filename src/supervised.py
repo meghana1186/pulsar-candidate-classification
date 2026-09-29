@@ -12,6 +12,10 @@ import sys
 import numpy as np
 import pandas as pd
 
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import RandomizedSearchCV
+from scipy.stats import randint
+
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.metrics import (
     accuracy_score, recall_score, precision_score,
@@ -108,16 +112,51 @@ def evaluate(y_true, y_pred, y_proba=None, name="model"):
         metrics["roc_auc"] = roc_auc_score(y_true, y_proba)
     return metrics
 
-
 def print_metrics(m):
     print(f"--- {m['model']} ---")
     for k in ["accuracy", "recall", "precision", "f1"]:
         print(f"  {k:>10}: {m[k]:.4f}")
     if "roc_auc" in m:
         print(f"  {'roc_auc':>10}: {m['roc_auc']:.4f}")
-    print(f"  confusion matrix:\n{confusion_matrix}"
-          if False else "")
 
+
+# ---------------- Random Forest ----------------
+
+def fit_random_forest(X_train, y_train, tune=True):
+    """
+    Fit Random Forest. If tune=True, use RandomizedSearchCV
+    over hyperparameters (matching paper's approach).
+    """
+    if not tune:
+        rf = RandomForestClassifier(
+            n_estimators=200, random_state=42, n_jobs=-1
+        )
+        rf.fit(X_train, y_train)
+        return rf
+
+    param_dist = {
+        "n_estimators": randint(100, 500),
+        "max_depth": [None, 10, 20, 30, 50, 100, 110],
+        "min_samples_split": randint(2, 20),
+        "max_features": ["sqrt", "log2", 2, 4, 6],
+    }
+
+    base = RandomForestClassifier(random_state=42, n_jobs=-1)
+
+    search = RandomizedSearchCV(
+        base,
+        param_distributions=param_dist,
+        n_iter=30,
+        cv=3,
+        scoring="recall",   # maximize recall, matching paper's objective
+        random_state=42,
+        n_jobs=-1,
+        verbose=1,
+    )
+    search.fit(X_train, y_train)
+    print(f"\n  Best RF params: {search.best_params_}")
+    print(f"  Best CV recall: {search.best_score_:.4f}")
+    return search.best_estimator_
 
 # ---------------- Main: GDA baseline ----------------
 
@@ -192,6 +231,95 @@ def main():
           f"f1={test_metrics['f1']:.4f}  "
           f"auc={test_metrics['roc_auc']:.4f}")
     print(f"  Confusion matrix:\n{confusion_matrix(y_test, y_test_pred)}")
+
+
+    # --- Random Forest ---
+    print("\n=== Random Forest: 5-fold CV on training set ===")
+
+    fold_metrics = []
+    for fold, (tr_idx, va_idx) in enumerate(skf.split(X_train, y_train), 1):
+        X_tr, y_tr = X_train[tr_idx], y_train[tr_idx]
+        X_va, y_va = X_train[va_idx], y_train[va_idx]
+
+        # Upsample positives in training fold only
+        pos_idx = np.where(y_tr == 1)[0]
+        neg_idx = np.where(y_tr == 0)[0]
+        upsampled_pos = np.random.choice(
+            pos_idx, size=len(neg_idx), replace=True
+        )
+        idx = np.concatenate([neg_idx, upsampled_pos])
+        X_tr_up, y_tr_up = X_tr[idx], y_tr[idx]
+
+        rf = RandomForestClassifier(
+            n_estimators=200,
+            max_depth=110,
+            max_features=4,
+            min_samples_split=5,
+            random_state=42,
+            n_jobs=-1,
+        )
+        rf.fit(X_tr_up, y_tr_up)
+
+        y_va_proba = rf.predict_proba(X_va)[:, 1]
+
+        # Test two thresholds: 0.5 and 0.2 (paper found 0.2 optimal)
+        for thr in [0.5, 0.2]:
+            y_va_pred = (y_va_proba >= thr).astype(int)
+            m = evaluate(y_va, y_va_pred, y_va_proba,
+                         name=f"RF fold {fold} thr={thr}")
+            m["threshold"] = thr
+            if thr == 0.5:
+                fold_metrics.append(m)
+            print(f"  Fold {fold} thr={thr}: "
+                  f"acc={m['accuracy']:.4f}  "
+                  f"recall={m['recall']:.4f}  "
+                  f"f1={m['f1']:.4f}")
+
+    # Average across folds at threshold 0.5
+    avg_rf = {}
+    for k in ["accuracy", "recall", "precision", "f1", "roc_auc"]:
+        avg_rf[k] = np.mean([m[k] for m in fold_metrics])
+    print(f"\n  RF CV average (thr=0.5): acc={avg_rf['accuracy']:.4f}  "
+          f"recall={avg_rf['recall']:.4f}  f1={avg_rf['f1']:.4f}  "
+          f"auc={avg_rf['roc_auc']:.4f}")
+
+    # --- Final RF on full training set ---
+    print("\n=== Random Forest: full train set, test set ===")
+
+    pos_idx = np.where(y_train == 1)[0]
+    neg_idx = np.where(y_train == 0)[0]
+    upsampled_pos = np.random.choice(pos_idx, size=len(neg_idx), replace=True)
+    idx = np.concatenate([neg_idx, upsampled_pos])
+    X_train_up, y_train_up = X_train[idx], y_train[idx]
+
+    rf = RandomForestClassifier(
+        n_estimators=200,
+        max_depth=110,
+        max_features=4,
+        min_samples_split=5,
+        random_state=42,
+        n_jobs=-1,
+    )
+    rf.fit(X_train_up, y_train_up)
+    y_test_proba = rf.predict_proba(X_test)[:, 1]
+
+    for thr in [0.5, 0.2]:
+        y_test_pred = (y_test_proba >= thr).astype(int)
+        m = evaluate(y_test, y_test_pred, y_test_proba,
+                     name=f"RF test thr={thr}")
+        print(f"\n  RF test (thr={thr}): "
+              f"acc={m['accuracy']:.4f}  recall={m['recall']:.4f}  "
+              f"precision={m['precision']:.4f}  f1={m['f1']:.4f}  "
+              f"auc={m['roc_auc']:.4f}")
+        print(f"  Confusion matrix:\n{confusion_matrix(y_test, y_test_pred)}")
+
+    # --- Feature importances ---
+    print("\n=== RF Feature Importances ===")
+    for name, imp in sorted(
+        zip(features, rf.feature_importances_),
+        key=lambda x: -x[1],
+    ):
+        print(f"  {name:>18}: {imp:.4f}")
 
 
 if __name__ == "__main__":
