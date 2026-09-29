@@ -6,26 +6,32 @@ Implements:
   1. Gaussian Discriminant Analysis (GDA) - baseline
   2. Random Forest - main model (added next)
 """
-
 import os
 import sys
 import numpy as np
 import pandas as pd
 
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split, StratifiedKFold 
 from sklearn.model_selection import RandomizedSearchCV
 from scipy.stats import randint
 
-from sklearn.model_selection import train_test_split, StratifiedKFold
+from imblearn.over_sampling import SMOTE
+from xgboost import XGBClassifier
+
 from sklearn.metrics import (
     accuracy_score, recall_score, precision_score,
     f1_score, confusion_matrix, roc_auc_score,
+    roc_curve, precision_recall_curve, average_precision_score,
+    matthews_corrcoef,              # ← ADD THIS
 )
 
-# Allow imports from src/
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from data_loader import load_data
-
 
 # ---------------- GDA (from scratch) ----------------
 
@@ -107,17 +113,13 @@ def evaluate(y_true, y_pred, y_proba=None, name="model"):
         "recall": recall_score(y_true, y_pred),
         "precision": precision_score(y_true, y_pred, zero_division=0),
         "f1": f1_score(y_true, y_pred, zero_division=0),
+        "mcc": matthews_corrcoef(y_true, y_pred),
     }
     if y_proba is not None:
         metrics["roc_auc"] = roc_auc_score(y_true, y_proba)
+        metrics["pr_auc"] = average_precision_score(y_true, y_proba)
     return metrics
 
-def print_metrics(m):
-    print(f"--- {m['model']} ---")
-    for k in ["accuracy", "recall", "precision", "f1"]:
-        print(f"  {k:>10}: {m[k]:.4f}")
-    if "roc_auc" in m:
-        print(f"  {'roc_auc':>10}: {m['roc_auc']:.4f}")
 
 
 # ---------------- Random Forest ----------------
@@ -158,9 +160,66 @@ def fit_random_forest(X_train, y_train, tune=True):
     print(f"  Best CV recall: {search.best_score_:.4f}")
     return search.best_estimator_
 
+# ---------------- SMOTE ----------------
+
+def apply_smote(X_train, y_train, random_state=42):
+    """Apply SMOTE to the training set only."""
+    smote = SMOTE(random_state=random_state)
+    return smote.fit_resample(X_train, y_train)
+
+# ---------------- Plotting ----------------
+
+def plot_roc_pr_curves(results_dict, out_dir="results"):
+    """
+    Plot ROC and Precision-Recall curves for multiple models.
+
+    Parameters
+    ----------
+    results_dict : dict
+        {model_name: (y_true, y_proba)}
+    out_dir : str
+        Directory to save the plots.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+
+    # --- ROC curve ---
+    plt.figure(figsize=(7, 6))
+    for name, (y_true, y_proba) in results_dict.items():
+        fpr, tpr, _ = roc_curve(y_true, y_proba)
+        auc = roc_auc_score(y_true, y_proba)
+        plt.plot(fpr, tpr, label=f"{name} (AUC = {auc:.4f})", linewidth=2)
+    plt.plot([0, 1], [0, 1], "k--", alpha=0.5, label="Random")
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate (Recall)")
+    plt.title("ROC Curves")
+    plt.legend(loc="lower right")
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, "roc_curves.png"), dpi=120)
+    plt.close()
+
+    # --- PR curve ---
+    plt.figure(figsize=(7, 6))
+    for name, (y_true, y_proba) in results_dict.items():
+        prec, rec, _ = precision_recall_curve(y_true, y_proba)
+        ap = average_precision_score(y_true, y_proba)
+        plt.plot(rec, prec, label=f"{name} (AP = {ap:.4f})", linewidth=2)
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.title("Precision-Recall Curves")
+    plt.legend(loc="lower left")
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, "pr_curves.png"), dpi=120)
+    plt.close()
+
+    print(f"\nSaved ROC and PR curves to {out_dir}/")
+    
 # ---------------- Main: GDA baseline ----------------
 
 def main():
+    # Seed everything for reproducibility
+    np.random.seed(42)
     print("Loading data...")
     df = load_data()
     features = [c for c in df.columns if c != "class"]
@@ -321,6 +380,182 @@ def main():
     ):
         print(f"  {name:>18}: {imp:.4f}")
 
+        # --- SMOTE + Random Forest ---
+    print("\n=== Random Forest with SMOTE: 5-fold CV ===")
+
+    fold_metrics_smote = []
+    for fold, (tr_idx, va_idx) in enumerate(skf.split(X_train, y_train), 1):
+        X_tr, y_tr = X_train[tr_idx], y_train[tr_idx]
+        X_va, y_va = X_train[va_idx], y_train[va_idx]
+
+        X_tr_sm, y_tr_sm = apply_smote(X_tr, y_tr)
+
+        rf_sm = RandomForestClassifier(
+            n_estimators=200, max_depth=110, max_features=4,
+            min_samples_split=5, random_state=42, n_jobs=-1,
+        )
+        rf_sm.fit(X_tr_sm, y_tr_sm)
+        y_va_proba_sm = rf_sm.predict_proba(X_va)[:, 1]
+        y_va_pred_sm = (y_va_proba_sm >= 0.5).astype(int)
+
+        m = evaluate(y_va, y_va_pred_sm, y_va_proba_sm,
+                     name=f"RF-SMOTE fold {fold}")
+        fold_metrics_smote.append(m)
+        print(f"  Fold {fold}: acc={m['accuracy']:.4f}  "
+              f"recall={m['recall']:.4f}  f1={m['f1']:.4f}")
+
+    avg_sm = {k: np.mean([m[k] for m in fold_metrics_smote])
+              for k in ["accuracy", "recall", "precision", "f1", "roc_auc"]}
+    print(f"\n  RF-SMOTE CV average: acc={avg_sm['accuracy']:.4f}  "
+          f"recall={avg_sm['recall']:.4f}  f1={avg_sm['f1']:.4f}  "
+          f"auc={avg_sm['roc_auc']:.4f}")
+
+    # --- Final RF-SMOTE on full train set ---
+    print("\n=== RF-SMOTE: test set ===")
+    X_train_sm, y_train_sm = apply_smote(X_train, y_train)
+    rf_sm = RandomForestClassifier(
+        n_estimators=200, max_depth=110, max_features=4,
+        min_samples_split=5, random_state=42, n_jobs=-1,
+    )
+    rf_sm.fit(X_train_sm, y_train_sm)
+    y_test_proba_sm = rf_sm.predict_proba(X_test)[:, 1]
+
+    for thr in [0.5, 0.2]:
+        y_test_pred_sm = (y_test_proba_sm >= thr).astype(int)
+        m = evaluate(y_test, y_test_pred_sm, y_test_proba_sm,
+                     name=f"RF-SMOTE test thr={thr}")
+        print(f"\n  RF-SMOTE test (thr={thr}): "
+              f"acc={m['accuracy']:.4f}  recall={m['recall']:.4f}  "
+              f"precision={m['precision']:.4f}  f1={m['f1']:.4f}  "
+              f"auc={m['roc_auc']:.4f}")
+        print(f"  Confusion matrix:\n{confusion_matrix(y_test, y_test_pred_sm)}")
+
+    # --- XGBoost with SMOTE ---
+    print("\n=== XGBoost with SMOTE: 5-fold CV ===")
+
+    fold_metrics_xgb = []
+    for fold, (tr_idx, va_idx) in enumerate(skf.split(X_train, y_train), 1):
+        X_tr, y_tr = X_train[tr_idx], y_train[tr_idx]
+        X_va, y_va = X_train[va_idx], y_train[va_idx]
+
+        X_tr_sm, y_tr_sm = apply_smote(X_tr, y_tr)
+
+        xgb = XGBClassifier(
+            n_estimators=300, max_depth=6, learning_rate=0.1,
+            subsample=0.8, colsample_bytree=0.8,
+            eval_metric="logloss", random_state=42, n_jobs=-1,
+            tree_method="hist",
+        )
+        xgb.fit(X_tr_sm, y_tr_sm)
+        y_va_proba_xgb = xgb.predict_proba(X_va)[:, 1]
+        y_va_pred_xgb = (y_va_proba_xgb >= 0.5).astype(int)
+
+        m = evaluate(y_va, y_va_pred_xgb, y_va_proba_xgb,
+                     name=f"XGBoost fold {fold}")
+        fold_metrics_xgb.append(m)
+        print(f"  Fold {fold}: acc={m['accuracy']:.4f}  "
+              f"recall={m['recall']:.4f}  f1={m['f1']:.4f}")
+
+    avg_xgb = {k: np.mean([m[k] for m in fold_metrics_xgb])
+               for k in ["accuracy", "recall", "precision", "f1", "roc_auc"]}
+    print(f"\n  XGBoost CV average: acc={avg_xgb['accuracy']:.4f}  "
+          f"recall={avg_xgb['recall']:.4f}  f1={avg_xgb['f1']:.4f}  "
+          f"auc={avg_xgb['roc_auc']:.4f}")
+
+    # --- Final XGBoost on full train set ---
+    print("\n=== XGBoost: test set ===")
+    X_train_sm, y_train_sm = apply_smote(X_train, y_train)
+    xgb = XGBClassifier(
+        n_estimators=300, max_depth=6, learning_rate=0.1,
+        subsample=0.8, colsample_bytree=0.8,
+        eval_metric="logloss", random_state=42, n_jobs=-1,
+        tree_method="hist",
+    )
+    xgb.fit(X_train_sm, y_train_sm)
+    y_test_proba_xgb = xgb.predict_proba(X_test)[:, 1]
+
+    for thr in [0.5, 0.2]:
+        y_test_pred_xgb = (y_test_proba_xgb >= thr).astype(int)
+        m = evaluate(y_test, y_test_pred_xgb, y_test_proba_xgb,
+                     name=f"XGBoost test thr={thr}")
+        print(f"\n  XGBoost test (thr={thr}): "
+              f"acc={m['accuracy']:.4f}  recall={m['recall']:.4f}  "
+              f"precision={m['precision']:.4f}  f1={m['f1']:.4f}  "
+              f"auc={m['roc_auc']:.4f}")
+        print(f"  Confusion matrix:\n{confusion_matrix(y_test, y_test_pred_xgb)}")
+
+    # --- Final ROC/PR plots with all four models ---
+    # Recompute GDA probas on test set for the plot
+    gda_test_proba = predict_proba_gda(
+        fit_gda(X_train_up, y_train_up), X_test
+    )
+    plot_roc_pr_curves({
+        "GDA": (y_test, gda_test_proba),
+        "RF (upsampled)": (y_test, y_test_proba),
+        "RF + SMOTE": (y_test, y_test_proba_sm),
+        "XGBoost + SMOTE": (y_test, y_test_proba_xgb),
+    })
+
+
+    # --- Save all test results to CSV ---
+    import csv
+    test_results = [
+        {"model": "GDA", "threshold": 0.5,
+         **{k: v for k, v in test_metrics.items() if k != "model"}},
+        {"model": "RF (upsampled)", "threshold": 0.5,
+         **{k: v for k, v in
+            evaluate(y_test, (y_test_proba >= 0.5).astype(int),
+                     y_test_proba, name="rf").items() if k != "model"}},
+        {"model": "RF (upsampled)", "threshold": 0.2,
+         **{k: v for k, v in
+            evaluate(y_test, (y_test_proba >= 0.2).astype(int),
+                     y_test_proba, name="rf").items() if k != "model"}},
+        {"model": "RF + SMOTE", "threshold": 0.5,
+         **{k: v for k, v in
+            evaluate(y_test, (y_test_proba_sm >= 0.5).astype(int),
+                     y_test_proba_sm, name="rf_sm").items() if k != "model"}},
+        {"model": "RF + SMOTE", "threshold": 0.2,
+         **{k: v for k, v in
+            evaluate(y_test, (y_test_proba_sm >= 0.2).astype(int),
+                     y_test_proba_sm, name="rf_sm").items() if k != "model"}},
+        {"model": "XGBoost + SMOTE", "threshold": 0.5,
+         **{k: v for k, v in
+            evaluate(y_test, (y_test_proba_xgb >= 0.5).astype(int),
+                     y_test_proba_xgb, name="xgb").items() if k != "model"}},
+        {"model": "XGBoost + SMOTE", "threshold": 0.2,
+         **{k: v for k, v in
+            evaluate(y_test, (y_test_proba_xgb >= 0.2).astype(int),
+                     y_test_proba_xgb, name="xgb").items() if k != "model"}},
+    ]
+
+    os.makedirs("results", exist_ok=True)
+    with open("results/test_results.csv", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=test_results[0].keys())
+        writer.writeheader()
+        writer.writerows(test_results)
+    print(f"\nSaved test results to results/test_results.csv")
+
+    # --- Save CV summary ---
+    cv_summary = [
+        {"model": "GDA", "cv_accuracy": avg["accuracy"],
+         "cv_recall": avg["recall"], "cv_f1": avg["f1"],
+         "cv_auc": avg["roc_auc"]},
+        {"model": "RF (upsampled)", "cv_accuracy": avg_rf["accuracy"],
+         "cv_recall": avg_rf["recall"], "cv_f1": avg_rf["f1"],
+         "cv_auc": avg_rf["roc_auc"]},
+        {"model": "RF + SMOTE", "cv_accuracy": avg_sm["accuracy"],
+         "cv_recall": avg_sm["recall"], "cv_f1": avg_sm["f1"],
+         "cv_auc": avg_sm["roc_auc"]},
+        {"model": "XGBoost + SMOTE", "cv_accuracy": avg_xgb["accuracy"],
+         "cv_recall": avg_xgb["recall"], "cv_f1": avg_xgb["f1"],
+         "cv_auc": avg_xgb["roc_auc"]},
+    ]
+
+    with open("results/cv_summary.csv", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=cv_summary[0].keys())
+        writer.writeheader()
+        writer.writerows(cv_summary)
+    print("Saved CV summary to results/cv_summary.csv")
 
 if __name__ == "__main__":
     main()
