@@ -27,10 +27,11 @@ Pulsar-Classification-Mini-Project/
 |   |-- data.py               loads the data for the unsupervised part, downloads it if missing,
 |   |                         and checks the skewness/kurtosis column order
 |   |-- supervised.py         GDA, Random Forest, RF + SMOTE, XGBoost + SMOTE
-|   `-- unsupervised.py       K-means, Self-Organizing Map, PCA plots
+|   |-- unsupervised.py       K-means, Self-Organizing Map, PCA plots
+|   `-- utils.py              empty, kept for shared helpers
 |-- predict_cluster.py        demo: assigns one pulsar to its cluster
 |-- results/
-|   |-- supervised/           classifier metrics and curves
+|   |-- supervised/           EDA figures, classifier metrics and curves
 |   `-- unsupervised/         clustering tables and figures
 |-- requirements.txt
 `-- README.md
@@ -146,7 +147,7 @@ pip install notebook
 jupyter notebook notebooks/01_eda.ipynb
 ```
 
-Run the cells from top to bottom. The notebook saves its figures to `results/`.
+Run the cells from top to bottom. The figures in the repository are stored in `results/supervised/`; running the notebook saves fresh copies to `results/`.
 
 ## Output files
 
@@ -154,6 +155,9 @@ Run the cells from top to bottom. The notebook saves its figures to `results/`.
 
 | File | Contents |
 |---|---|
+| `feature_distributions.png` | EDA: distribution of each feature, pulsars against non-pulsars |
+| `correlation_matrix.png` | EDA: correlations between the 8 features |
+| `pairplot.png` | EDA: pairwise scatter plots on a sample of 500 candidates per class |
 | `test_results.csv` | Accuracy, recall, precision, F1, MCC, ROC-AUC and PR-AUC on the test set, for each model at thresholds 0.5 and 0.2 |
 | `cv_summary.csv` | Mean 5-fold cross-validation accuracy, recall, F1 and AUC for each model |
 | `roc_curves.png` | ROC curves for all four models |
@@ -173,8 +177,6 @@ Run the cells from top to bottom. The notebook saves its figures to `results/`.
 | `pca_loadings.csv`, `pca_feature_correlations.csv`, `pca_feature_correlations.png` | What the two principal components represent |
 | `som_maps.png`, `som_sigma_sweep.csv` | SOM distance map, hits per cell, and the sigma comparison |
 | `kmeans_cluster_medians.csv`, `som_cluster_medians.csv`, `kmeans_cluster_profiles.png` | What each cluster looks like in the original units |
-
-The EDA figures (`feature_distributions.png`, `correlation_matrix.png`, `pairplot.png`) are in `results/`.
 
 ## Key results
 
@@ -210,4 +212,4 @@ All random seeds are fixed (`random_state = 42`), so running the scripts again g
 
 1. Lyon, R. J., Stappers, B. W., Cooper, S., Brooke, J. M., and Knowles, J. D. (2016). Fifty years of pulsar candidate selection: from simple filters to a new principled real-time classification approach. *Monthly Notices of the Royal Astronomical Society*, 459(1), 1104-1123.
 2. Debesai, S., Gutierrez, C., and Koyluoglu, N. U. (2020). Application of machine learning methods to identify and categorize radio pulsar signal candidates. CS229, Stanford University.
-3. Lyon, R. (2015). HTRU2 [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5DK6R
+3. Lyon, R. (2015). HTRU2 [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5DK6R   
