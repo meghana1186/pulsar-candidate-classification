@@ -169,7 +169,7 @@ def apply_smote(X_train, y_train, random_state=42):
 
 # ---------------- Plotting ----------------
 
-def plot_roc_pr_curves(results_dict, out_dir="results"):
+def plot_roc_pr_curves(results_dict, out_dir="results/supervised"):
     """
     Plot ROC and Precision-Recall curves for multiple models.
 
@@ -494,7 +494,7 @@ def main():
         "RF (upsampled)": (y_test, y_test_proba),
         "RF + SMOTE": (y_test, y_test_proba_sm),
         "XGBoost + SMOTE": (y_test, y_test_proba_xgb),
-    })
+    }, out_dir="results/supervised")
 
 
     # --- Save all test results to CSV ---
@@ -528,12 +528,12 @@ def main():
                      y_test_proba_xgb, name="xgb").items() if k != "model"}},
     ]
 
-    os.makedirs("results", exist_ok=True)
-    with open("results/test_results.csv", "w", newline="") as f:
+    os.makedirs("results/supervised", exist_ok=True)
+    with open("results/supervised/test_results.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=test_results[0].keys())
         writer.writeheader()
         writer.writerows(test_results)
-    print(f"\nSaved test results to results/test_results.csv")
+    print(f"\nSaved test results to results/supervised/test_results.csv")
 
     # --- Save CV summary ---
     cv_summary = [
@@ -551,11 +551,11 @@ def main():
          "cv_auc": avg_xgb["roc_auc"]},
     ]
 
-    with open("results/cv_summary.csv", "w", newline="") as f:
+    with open("results/supervised/cv_summary.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=cv_summary[0].keys())
         writer.writeheader()
         writer.writerows(cv_summary)
-    print("Saved CV summary to results/cv_summary.csv")
+    print("Saved CV summary to results/supervised/cv_summary.csv")
 
 if __name__ == "__main__":
     main()
