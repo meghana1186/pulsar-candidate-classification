@@ -1,0 +1,51 @@
+{
+  "n_pulsars": 1639,
+  "paper_replication_raw_k3": {
+    "silhouette": 0.4413,
+    "sizes": [
+      974,
+      621,
+      44
+    ]
+  },
+  "raw_top3_variance_share": {
+    "dm_kurt": 0.4175,
+    "dm_mean": 0.3305,
+    "ip_mean": 0.1451
+  },
+  "log_transformed_features": [
+    "ip_std",
+    "dm_skew",
+    "dm_kurt"
+  ],
+  "chosen_k": 2,
+  "kmeans": {
+    "silhouette": 0.3909,
+    "sizes": [
+      764,
+      875
+    ]
+  },
+  "som": {
+    "grid": [
+      5,
+      5
+    ],
+    "sigma": 1.5,
+    "epochs": 100,
+    "non_empty_cells": 25,
+    "quantization_error": 0.8501,
+    "topographic_error": 0.0244,
+    "per_cell_silhouette": 0.1987,
+    "grouped_silhouette": 0.3817,
+    "sizes": [
+      776,
+      863
+    ],
+    "ari_vs_kmeans": 0.8498
+  },
+  "pca_explained_variance": [
+    0.6423,
+    0.2541
+  ]
+}
