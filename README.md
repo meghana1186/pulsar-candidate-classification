@@ -28,7 +28,7 @@ Pulsar-Classification-Mini-Project/
 |   |                         and checks the skewness/kurtosis column order
 |   |-- supervised.py         GDA, Random Forest, RF + SMOTE, XGBoost + SMOTE
 |   |-- unsupervised.py       K-means, Self-Organizing Map, PCA plots
-|   `-- utils.py              empty, kept for shared helpers
+|   
 |-- predict_cluster.py        demo: assigns one pulsar to its cluster
 |-- results/
 |   |-- supervised/           EDA figures, classifier metrics and curves
