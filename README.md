@@ -1,25 +1,16 @@
 # Pulsar Candidate Classification and Clustering (HTRU2)
 
-Mini-project for UE24CS352A Machine Learning, PES University.
-
 Radio telescope surveys pick up far more pulsar candidates than anyone can check by hand, and most of them are noise or radio interference. This project does two things with the HTRU2 dataset:
 
 1. **Identify** real pulsars among all candidates using supervised learning (GDA, Random Forest, SMOTE, XGBoost).
 2. **Categorize** the confirmed pulsars using unsupervised learning (K-means and a Self-Organizing Map, with PCA for plots).
 
-It reproduces and extends *Application of Machine Learning Methods to Identify and Categorize Radio Pulsar Signal Candidates* (Debesai, Gutierrez and Koyluoglu, CS229, Stanford, 2020).
-
-## Team
-
-| Member | Part | Files |
-|---|---|---|
-| Shriya | EDA and supervised learning | `notebooks/01_eda.ipynb`, `src/data_loader.py`, `src/supervised.py` |
-| Meghana K | Data checks and unsupervised learning | `src/data.py`, `src/unsupervised.py`, `predict_cluster.py` |
+It reproduces and extends *Application of Machine Learning Methods to Identify and Categorize Radio Pulsar Signal Candidates* (Debesai, Gutierrez and Koyluoglu, CS229, Stanford, 2020). Built for the UE24CS352A Machine Learning course at PES University.
 
 ## Project structure
 
 ```
-Pulsar-Classification-Mini-Project/
+pulsar-candidate-classification/
 |-- notebooks/
 |   `-- 01_eda.ipynb          exploratory data analysis
 |-- src/
@@ -27,8 +18,7 @@ Pulsar-Classification-Mini-Project/
 |   |-- data.py               loads the data for the unsupervised part, downloads it if missing,
 |   |                         and checks the skewness/kurtosis column order
 |   |-- supervised.py         GDA, Random Forest, RF + SMOTE, XGBoost + SMOTE
-|   |-- unsupervised.py       K-means, Self-Organizing Map, PCA plots
-|   
+|   `-- unsupervised.py       K-means, Self-Organizing Map, PCA plots
 |-- predict_cluster.py        demo: assigns one pulsar to its cluster
 |-- results/
 |   |-- supervised/           EDA figures, classifier metrics and curves
@@ -41,13 +31,13 @@ The folders `data/` and `models/` are created when you run the code. They are no
 
 ## Setup
 
-You need Python and Git installed. We developed and tested everything on Python 3.12.
+You need Python and Git installed. Everything was developed and tested on Python 3.12.
 
 **Step 1. Clone the repository**
 
 ```bash
-git clone https://github.com/shriya5752/Pulsar-Classification-Mini-Project.git
-cd Pulsar-Classification-Mini-Project
+git clone https://github.com/meghana1186/pulsar-candidate-classification.git
+cd pulsar-candidate-classification
 ```
 
 **Step 2. Create and activate a virtual environment**
@@ -172,7 +162,7 @@ Run the cells from top to bottom. The figures in the repository are stored in `r
 | `silhouette_by_preprocessing.csv` | Silhouette per k on raw, standardized, and log plus standardized features |
 | `raw_variance_share.csv` | How much of the total variance each feature holds in raw units |
 | `feature_skewness.csv`, `feature_transform.png` | Skewness before and after the log transform |
-| `paper_vs_ours_pca.png` | The paper's clustering next to ours, on PCA axes |
+| `paper_vs_ours_pca.png` | The paper's clustering next to this project's, on PCA axes |
 | `pca_kmeans_vs_som.png` | K-means and SOM clusters on the same PCA axes |
 | `pca_loadings.csv`, `pca_feature_correlations.csv`, `pca_feature_correlations.png` | What the two principal components represent |
 | `som_maps.png`, `som_sigma_sweep.csv` | SOM distance map, hits per cell, and the sigma comparison |
@@ -202,7 +192,7 @@ The paper's three clusters come from unscaled features: in raw units, three feat
 
 ## A note on the data
 
-The UCI page and the reference paper disagree on whether skewness or kurtosis comes first in each group of four features. The file itself has mean, standard deviation, **skewness**, then **excess kurtosis**. We confirmed this mathematically: for any distribution, excess kurtosis is at least skewness squared minus 2. With our column order that holds for every row, and with the paper's order it fails for 16.8% of rows (pulse profile) and 93.1% (DM-SNR curve). `src/data.py` repeats this check every time it loads the data.
+The UCI page and the reference paper disagree on whether skewness or kurtosis comes first in each group of four features. The file itself has mean, standard deviation, **skewness**, then **excess kurtosis**. This can be checked mathematically: for any distribution, excess kurtosis is at least skewness squared minus 2. With this column order the inequality holds for every row, and with the paper's order it fails for 16.8% of rows (pulse profile) and 93.1% (DM-SNR curve). `src/data.py` repeats this check every time it loads the data.
 
 ## Reproducibility
 
@@ -212,4 +202,4 @@ All random seeds are fixed (`random_state = 42`), so running the scripts again g
 
 1. Lyon, R. J., Stappers, B. W., Cooper, S., Brooke, J. M., and Knowles, J. D. (2016). Fifty years of pulsar candidate selection: from simple filters to a new principled real-time classification approach. *Monthly Notices of the Royal Astronomical Society*, 459(1), 1104-1123.
 2. Debesai, S., Gutierrez, C., and Koyluoglu, N. U. (2020). Application of machine learning methods to identify and categorize radio pulsar signal candidates. CS229, Stanford University.
-3. Lyon, R. (2015). HTRU2 [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5DK6R   
+3. Lyon, R. (2015). HTRU2 [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5DK6R
